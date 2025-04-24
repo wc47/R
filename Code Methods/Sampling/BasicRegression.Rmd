@@ -1,0 +1,233 @@
+---
+title: "First Principles Regression"
+author: "Wyatt Clegg"
+date: "December 6, 2016"
+output: pdf_document
+---
+
+
+The first set of problems uses the data set `data1exam3.dat'.  Call the first column of the data y, the second column x1, and the third column x2. 
+```{r}
+setwd("~/Documents/School/BYU 2016-2017/Fall 2016/535/Final")
+data1 <- read.table('data1exam3.dat')
+colnames(data1)<-c("y","x1","x2")
+firstprin<-function(y,X)
+{
+  n<-dim(X)[1]
+  p<-dim(X)[2]
+  xpx<-t(X)%*%X
+  xpxi<-solve(xpx)
+  bhat<-xpxi%*%t(X)%*%y
+  yhat<-X%*%bhat
+  RSS<-t(y-yhat)%*%(y-yhat)
+  s2hat<-as.numeric(RSS)/(n-p)
+  SYY<-as.numeric(t(y-mean(y))%*%(y-mean(y)))
+  SSReg<-SYY - RSS
+  R2 <- SSReg/SYY
+  adjR2 <- X-s2hat/(SYY/(n-1))
+  vhatbhat<- s2hat*xpxi
+  tstar <-(bhat)/sqrt(s2hat/n)
+  ei<-y-yhat
+  hat<-X%*%xpxi%*%t(X)
+  littleh<- diag(hat)
+  stei<-ei/(sqrt(s2hat*(1-littleh)))
+  stdel<-ei*sqrt((n-p-1)/(RSS*(1-littleh)-ei^2))
+  dffits <- stdel*sqrt(littleh/(1-littleh))
+  cooksd<- ((ei/(1-littleh))^2*littleh)/(p*s2hat)
+  df<-n-p
+  list(bhat=bhat,yhat=yhat,RSS=RSS,s2hat=s2hat,SYY=SYY,
+       SSReg=SSReg,R2=R2,adjR2=adjR2,vhatbhat=vhatbhat,
+       tstar=tstar,ei=ei,stei=stei,stdel=stdel,dffits=dffits,
+       cooksd=cooksd,xpxi=xpxi,n=n,p=p,df=df) 
+}
+
+getF<-function(contrast,beta,vhatbhat){
+  rp <- nrow(contrast)
+  cc<- contrast
+  b <- beta
+  vh <-vhatbhat
+  t(cc%*%b)%*%solve(cc%*%vh%*%t(cc))%*%(cc%*%b)/rp
+}
+
+getSS<-function(contrast,beta,xpxi){
+  cc<-contrast
+  b<-beta
+  t(cc%*%b)%*%solve(cc%*%xpxi%*%t(cc))%*%(cc%*%beta)
+}
+```
+
+1.  Using the model $E(y) = \beta_0 + \beta_{1} x1 + \beta_{2} x2$, find the $\hat\beta's$.
+```{r}
+x<-as.matrix(cbind(1,data1[,2:3]))
+prob1<-firstprin(data1$y,x)
+prob1$bhat
+
+```
+2. Produce a table of the $\hat\beta's$, the standard errors of the $\hat\beta's$, the t-statistics of the null hypotheses that the $\beta's$ are equal to 0, and the p-values for the (two-tailed) tests.
+```{r}
+SE<-qt(0.975,dim(x)[1]-dim(x)[2])*
+  sqrt(diag(prob1$vhatbhat))
+
+pvalues<-1-pt(prob1$bhat,dim(x)[1]-dim(x)[2])
+cbind(prob1$bhat,SE,qt(0.975,dim(x)[1]-dim(x)[2]),pvalues)
+
+```
+3. Using the model in problem 1, find the F statistic to test the null hypothesis that $\beta_2=0$.
+```{r}
+C<-t(c(0,0,1))
+Fstar<-getF(C,prob1$bhat,prob1$vhatbhat)
+Fstar
+```
+4. Compute the F statistic to test the null hypothesis that $\beta_2=0$ using $F = \frac{TmtSS/Tmtdf}{ErrorSS/Errordf}$.
+```{r}
+Fstar2<-(getSS(C,prob1$bhat,prob1$xpxi)/1)/
+  ((prob1$RSS)/(prob1$n-3))
+Fstar2
+```
+5. Now fit the model $E(y) = \beta_0 + \beta_1 x1$.  What is $\hat\beta_1$?
+```{r}
+x2<-as.matrix(cbind(1,data1$x1))
+fit2<-firstprin(data1$y,x2)
+fit2$bhat[2]
+```
+6. Now fit the model $E(x_2) = \beta_0 + \beta_1 x1$.
+What is $\hat\beta_1$?
+```{r}
+fit3<-firstprin(data1$x2,x2)
+fit3$bhat[2]
+```
+7.  Take the residuals from the model in problem 5 and use them as the response, and fit them to a model using the residuals in problem 6 as the x's. That is, the model looks like $E(y-\hat{y}) = \beta_3 (x2-\hat{x2})$.  What is $\hat\beta_3$?
+```{r}
+e<-fit2$ei
+x3<-fit3$ei
+fit4<-firstprin(e,x3)
+fit4$bhat
+```
+8.  How does $\hat\beta_3$ in problem 7 compare to $\hat\beta_2$ in problem 1?
+
+They are identical.
+```{r}
+c(fit4$bhat,prob1$bhat[3])
+```
+9. Now consider an analysis of variance setting where there are 3 treatments each at 2 levels.  We will call them treatments A, B, and C.  So the cells could be labled A1B1C1, A1B1C2, A1B2C1, A1B2C2, A2B1C1, A2B1C2, A2B2C1, and A2B2C2.  The $\mu$ vector then would be the transpose of $(\mu_{111},\mu_{112},\mu_{121},\mu_{122},\mu_{211},\mu_{212},\mu_{221},\mu_{222})$.With 4 observations in each of the 8 cells, the data are found in the file 'data2exam3.dat'. What are the maximum likelihood estimates for the 8 cell means?
+```{r}
+data2 <- read.table('data2exam3.dat')
+trt<-rep(1:8,each=4)
+w<-model.matrix(~as.factor(trt)-1)
+prob2<-firstprin(data2$y,w)
+prob2$bhat
+```
+
+10.  What is the F statistic to test the null hypothesis that all the treatment mean parameters are equal?
+```{r}
+Q<-diag(1,7,7)
+Q1<-cbind(Q,0)
+C2<-Q1-cbind(0,Q)
+Fstar3<-getF(C2,prob2$bhat,prob2$vhatbhat)
+Fstar3
+```
+11.  What is the p-value of the F statistic in the previous problem?
+```{r}
+1-pf(Fstar3,7,prob2$df)
+```
+12.  Now I want you to use the following matrix to transform the $\mu's$ into $\beta's$.  
+```{r}
+a <- rbind(c(1/8,1/8,1/8,1/8,1/8,1/8,1/8,1/8),c(1/4,1/4,1/4,1/4,-1/4,-1/4,-1/4,-1/4),c(1/4,1/4,-1/4,-1/4,1/4,1/4,-1/4,-1/4),c(1,1,-1,-1,-1,-1,1,1),c(1/4,-1/4,1/4,-1/4,1/4,-1/4,1/4,-1/4),c(1,-1,1,-1,-1,1,-1,1),c(1,-1,-1,1,1,-1,-1,1),c(1,-1,-1,1,-1,1,1,-1))
+a
+```
+The first row of $a$ would be used to compute an overall intercept or an estimate of the mean of all 8 $\mu's$.  The second row of $a$ is used to compute a $\beta$ that is the average of all the cell means at level 1 of treatment A minus the average of all the cell means at level 2 of treatment A. That is, it would be used to test the marginal effect of treatment A.
+
+13. What would the fourth row of $a$ be used to test?
+
+It tests the interaction between Treatment A and Treatment
+B.
+
+14. What would the fifth row of $a$ be used to test?
+
+It tests the effect of Treatment C.
+
+15. What would the sixth row of $a$ be used to test?
+
+It tests the interaction between Treatment A and 
+Treatment C.
+
+
+16. What would the eighth row of $a$ be used to test?
+
+Interaction between all three Treatments: Treatment A,
+Treatment B, and Treatment C.
+
+17.  What are the $\hat\beta's$?
+```{r}
+ai<-solve(a)
+X3<-w%*%ai
+prob17<-firstprin(data2$y,X3)
+prob17$bhat[,1]
+```
+18. Print out $a\hat\mu$ and $\hat\beta$ side by side.
+```{r}
+cbind(a%*%prob2$bhat,prob17$bhat)
+```
+19. Print out $\hat\mu$ and $a^{-1}\hat\beta$ side by side.
+```{r}
+cbind(prob2$bhat,ai%*%prob17$bhat)
+```
+20. What is the F statistic to test the null hypothesis that there is no three way (ABC) interaction among the treatments?
+```{r}
+C4<-t(c(0,0,0,0,0,0,0,1))
+Fstar4<-getF(C4,prob17$bhat,prob17$vhatbhat)
+Ftobeat<-qf(0.95,1,prob17$df)
+Fstar4
+## Test whether significant
+Fstar4>=Ftobeat
+```
+21. What is the F statistic to test the null hypothesis that there is no AC interaction among the treatments?
+```{r}
+C5<-t(c(0,0,0,0,0,1,0,0))
+Fstar5<-getF(C5,prob17$bhat,prob17$vhatbhat)
+Fstar5
+## Test whether significant
+Fstar5>=Ftobeat
+```
+22. Now take out all the observations in cell A2B2C2.  Now estimate the $\hat\mu's$.  Now there are only 7.
+```{r}
+data3 <- data2[-29:-32,]
+```
+
+23. Now estimate $\hat\beta's$ using the $a$ matrix as previously defined, but constrain the three way interaction to be 0.  What are the $\hat\beta's$? There will only be 7.
+```{r}
+tmt1<-rep(1:7,each=4)
+w2<-model.matrix(~as.factor(tmt1)-1)
+prob23<-firstprin(data3$y,w2)
+prob23$bhat
+```
+24. Now estimate the $\hat\mu's$ using the $\hat\beta's$ you just estimated.  What are the new $\hat\mu's$?  There should be 8.
+
+```{r}
+w3<-cbind(w2,0)
+X4<-w3%*%ai
+X5<-X4[,-8]
+prob24<-firstprin(data3$y,X5)
+result24<-ai[,-8]%*%prob24$bhat
+result24
+```
+25. What do you get when you multiply the eighth row of the $a$ matrix by the $\hat\mu's$?
+```{r}
+a[8,]%*%result24
+```
+ We get 0.
+ 
+ 
+26. Explain why the answer in the previous problem makes sense.
+
+ We constrained the interaction between Treatments A, B,
+ and C to be 0 as part of back estimating. Therefore it is
+ logical and expected that we should get 0 when we multiply
+ our A matrix by our back-estimated values.
+ 
+27. Print out the $\hat\mu's$ next to their standard errors.
+```{r}
+SE<-qt(0.975,dim(X5)[1]-dim(X5)[2])*sqrt(diag(prob24$vhatbhat))
+SE<-c(SE,pi)
+cbind(result24,SE)
+```
